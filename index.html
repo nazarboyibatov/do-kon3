@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Professional POS Tizimi</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: #f0f2f5; display: flex; height: 100vh; overflow: hidden; }
+
+        /* Chap taraf - Savat qismi */
+        .left-panel {
+            width: 65%;
+            background: white;
+            display: flex;
+            flex-direction: column;
+            border-right: 2px solid #ddd;
+            padding: 20px;
+        }
+
+        .cart-title { margin-bottom: 20px; color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
+        
+        .cart-table-wrapper { flex-grow: 1; overflow-y: auto; }
+        
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f8f9fa; position: sticky; top: 0; }
+
+        .total-section {
+            padding: 20px;
+            background: #2d3436;
+            color: white;
+            border-radius: 10px;
+            margin-top: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .total-price { font-size: 32px; font-weight: bold; color: #55efc4; }
+
+        /* O'ng taraf - Boshqaruv qismi */
+        .right-panel {
+            width: 35%;
+            padding: 20px;
+            background: #f8f9fa;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .search-box {
+            padding: 15px;
+            font-size: 18px;
+            border: 2px solid #007bff;
+            border-radius: 8px;
+            outline: none;
+        }
+
+        .btn-add {
+            padding: 15px;
+            font-size: 18px;
+            background: #00b894;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        .btn-add:hover { background: #00a884; }
+
+        /* Mahsulot qo'shish oynasi (Modal) */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            width: 400px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .modal-content input { padding: 10px; font-size: 16px; border: 1px solid #ddd; border-radius: 5px; }
+        .modal-btns { display: flex; gap: 10px; }
+        .modal-btns button { flex: 1; padding: 10px; cursor: pointer; border: none; border-radius: 5px; }
+        .save-btn { background: #007bff; color: white; }
+        .cancel-btn { background: #636e72; color: white; }
+
+        /* Skaner kodi uchun yashirin input */
+        #hiddenScannerInput { position: absolute; opacity: 0; }
+    </style>
+</head>
+<body>
+
+    <!-- Chap panel: Savat -->
+    <div class="left-panel">
+        <h2 class="cart-title">🛒 Xarid Savati</h2>
+        <div class="cart-table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Nomi</th>
+                        <th>Narxi</th>
+                        <th>Soni</th>
+                        <th>Jami</th>
+                    </tr>
+                </thead>
+                <tbody id="cartItems">
+                    <!-- Mahsulotlar shu yerga tushadi -->
+                </tbody>
+            </table>
+        </div>
+        <div class="total-section">
+            <span>JAMI SUMMA:</span>
+            <span class="total-price"><span id="grandTotal">0</span> so'm</span>
+        </div>
+    </div>
+
+    <!-- O'ng panel: Qidiruv va Qo'shish -->
+    <div class="right-panel">
+        <h3>Qidiruv va Boshqaruv</h3>
+        <input type="text" id="searchInput" class="search-box" placeholder="Shtrix-kodni skanerlang yoki qidiring..." autofocus>
+        
+        <button class="btn-add" onclick="openModal()">+ Yangi mahsulot qo'shish</button>
+
+        <div style="margin-top: 20px; color: #636e72; font-size: 14px;">
+            <p><b>Eslatma:</b> Skaner kodi avtomatik ravishda chap tarafdagi savatga qo'shiladi.</p>
+        </div>
+
+        <button onclick="clearCart()" style="margin-top: auto; padding: 10px; background: #fab1a0; border:none; border-radius: 5px; cursor:pointer;">Savatni tozalash</button>
+    </div>
+
+    <!-- Mahsulot qo'shish Modali -->
+    <div id="productModal" class="modal">
+        <div class="modal-content">
+            <h3>Yangi mahsulot</h3>
+            <input type="text" id="newBarcode" placeholder="Shtrix kodni skanerlang">
+            <input type="text" id="newName" placeholder="Mahsulot nomi">
+            <input type="number" id="newPrice" placeholder="Sotilish narxi">
+            <div class="modal-btns">
+                <button class="save-btn" onclick="saveProduct()">Saqlash</button>
+                <button class="cancel-btn" onclick="closeModal()">Bekor qilish</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Mahsulotlar bazasi (LocalStorage dan yuklash)
+        let productsDB = JSON.parse(localStorage.getItem('myProducts')) || {};
+        let cart = [];
+
+        const searchInput = document.getElementById('searchInput');
+        const cartItems = document.getElementById('cartItems');
+        const grandTotal = document.getElementById('grandTotal');
+
+        // Skaner yoki Qidiruv inputini eshitish
+        searchInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                const code = searchInput.value.trim();
+                if (code) {
+                    addToCart(code);
+                }
+                searchInput.value = '';
+            }
+        });
+
+        // Savatga qo'shish
+        function addToCart(code) {
+            const product = productsDB[code];
+            if (product) {
+                const existingItem = cart.find(item => item.code === code);
+                if (existingItem) {
+                    existingItem.qty += 1;
+                } else {
+                    cart.push({ ...product, code: code, qty: 1 });
+                }
+                renderCart();
+            } else {
+                alert("Mahsulot topilmadi! Avval uni bazaga qo'shing.");
+            }
+        }
+
+        // Savatni chizish
+        function renderCart() {
+            cartItems.innerHTML = '';
+            let total = 0;
+
+            cart.forEach((item, index) => {
+                const itemTotal = item.price * item.qty;
+                total += itemTotal;
+                cartItems.innerHTML += `
+                    <tr>
+                        <td>${item.name}</td>
+                        <td>${item.price.toLocaleString()}</td>
+                        <td>${item.qty}</td>
+                        <td>${itemTotal.toLocaleString()}</td>
+                    </tr>
+                `;
+            });
+
+            grandTotal.innerText = total.toLocaleString();
+        }
+
+        // Modalni ochish/yopish
+        function openModal() { document.getElementById('productModal').style.display = 'flex'; }
+        function closeModal() { document.getElementById('productModal').style.display = 'none'; }
+
+        // Yangi mahsulotni bazaga saqlash
+        function saveProduct() {
+            const code = document.getElementById('newBarcode').value.trim();
+            const name = document.getElementById('newName').value.trim();
+            const price = parseFloat(document.getElementById('newPrice').value);
+
+            if (code && name && price) {
+                productsDB[code] = { name: name, price: price };
+                localStorage.setItem('myProducts', JSON.stringify(productsDB));
+                alert("Mahsulot bazaga qo'shildi!");
+                closeModal();
+                // Tozalash
+                document.getElementById('newBarcode').value = '';
+                document.getElementById('newName').value = '';
+                document.getElementById('newPrice').value = '';
+            } else {
+                alert("Barcha maydonlarni to'ldiring!");
+            }
+        }
+
+        function clearCart() {
+            if(confirm("Savatni tozalamoqchimisiz?")) {
+                cart = [];
+                renderCart();
+            }
+        }
+
+        // Doim fokus inputda bo'lishi uchun (Skaner ishlashi uchun)
+        document.addEventListener('click', () => {
+            if (document.getElementById('productModal').style.display !== 'flex') {
+                searchInput.focus();
+            }
+        });
+    </script>
+</body>
+</html>
